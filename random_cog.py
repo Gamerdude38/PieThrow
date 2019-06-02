@@ -2,7 +2,7 @@
 John Maurer
 
 Description: A class that generates a random cog model, renders it, and
-defines its animations
+defines its animations and collisions
 '''
 
 from direct.actor.Actor import Actor
