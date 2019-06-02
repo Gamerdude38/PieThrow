@@ -74,10 +74,10 @@ class PieThrow(ShowBase):
 		self.pieCapsule.node().setIntoCollideMask(BitMask32.allOff())
 		
 		#Set up the pie's collision ray (gravity & floor collisions)
-		self.pieSeg = self.pieNode.attachNewNode(CollisionNode('pieSeg'))
-		self.pieSeg.node().addSolid(CollisionRay(0, 0, 1, 0, 0, -1))
-		self.pieSeg.node().setFromCollideMask(FLOOR_MASK)
-		self.pieSeg.node().setIntoCollideMask(BitMask32.allOff())
+		self.pieRay = self.pieNode.attachNewNode(CollisionNode('pieRay'))
+		self.pieRay.node().addSolid(CollisionRay(0, 0, 1, 0, 0, -1))
+		self.pieRay.node().setFromCollideMask(FLOOR_MASK)
+		self.pieRay.node().setIntoCollideMask(BitMask32.allOff())
 		
 		#Define intervals for the pie's spawning movement
 		self.scalePie = LerpScaleInterval(self.pie, 1, 1, 0)
@@ -114,13 +114,13 @@ class PieThrow(ShowBase):
 		
 		#Add the toon and pie colliders to the handlers
 		self.floorHandler.addCollider(self.toonRay, self.toonNode)
-		self.floorHandler.addCollider(self.pieSeg, self.pieNode)
+		self.floorHandler.addCollider(self.pieRay, self.pieNode)
 		self.wallHandler.addCollider(self.toonCapsule, self.toonNode)
 		self.wallHandler.addCollider(self.pieCapsule, self.pieNode)
 		
 		#Add the handlers to the traverser (collision driver)
 		self.cTrav.addCollider(self.toonRay, self.floorHandler)
-		self.cTrav.addCollider(self.pieSeg, self.floorHandler)
+		self.cTrav.addCollider(self.pieRay, self.floorHandler)
 		self.cTrav.addCollider(self.toonCapsule, self.wallHandler)
 		self.cTrav.addCollider(self.pieCapsule, self.wallHandler)
 		
@@ -150,7 +150,7 @@ class PieThrow(ShowBase):
 		self.accept('control', self.attackStart)
 		
 		#Accept collision handling events
-		self.accept('self.pieSeg-into-self.floorCollider', self.pieFloorCollision)
+		self.accept('self.pieRay-into-self.floorCollider', self.pieFloorCollision)
 		
 		#Set up throwing interval and sequence
 		self.throwTorso = self.toon.actorInterval('attackTorso', loop=0)
