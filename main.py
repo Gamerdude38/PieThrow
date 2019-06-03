@@ -36,10 +36,9 @@ class PieThrow(ShowBase):
 		self.turnHeading = ''
 		self.speed = 0.0
 		self.turnSpeed = 0.0
-		self.toonCurrentH = 0
 		
 		#Source for collision learning: https://discourse.panda3d.org/t/panda3d-collisions-made-simple/7441
-		#Define collision traverser and handlers
+		#Define collision handlers and the traverser
 		self.cTrav = CollisionTraverser()
 		self.floorHandler = CollisionHandlerFloor()
 		self.floorHandler.setMaxVelocity(40)
@@ -54,85 +53,101 @@ class PieThrow(ShowBase):
 		self.terrain.reparentTo(render)
 		self.terrain.setScale(1.5)
 		
+		self.terrain.ls()
+		
+		#Set tags for the terrain to mark everything
+		self.terrain.find('**/collision_floors').setTag('collisions', 'floor')
+		self.terrain.find('**/collision_walls').setTag('collisions', 'walls')
+		self.terrain.find('**/Door_0_Collision').setTag('collisions', 'walls')
+		
+		#Further specify terrain for colliders
+		self.floor = self.terrain.find('**/collision_floors')
+		self.walls = self.terrain.find('**/collision_walls')
+
 		#Load the wall to block off the exit tunnel
 		self.wall = loader.loadModel(self.pandaDirectory + '/resources/terrain/LB_wall_panel.bam')
 		self.wall.reparentTo(render)
 		self.wall.setPos(-30, -185, 0)
 		self.wall.setH(-30)
 		self.wall.setScale(1.6, 1, 2)
+		self.wall.setTag('collisions', 'walls')
 		
-		#Load the pie model
-		self.pieNode = NodePath('pieNode')
-		self.pieNode.reparentTo(render)
-		self.pieNode.setPos(0, 0, 5)
-		self.pie = loader.loadModel(self.pandaDirectory + "/resources/toon/models/tart.bam")
-		
-		#Set up the pie's collision capsule (wall & cog collisions)
-		self.pieCapsule = self.pieNode.attachNewNode(CollisionNode('pieCap'))
-		self.pieCapsule.node().addSolid(CollisionCapsule(0, 0, 0.2, 0, 0, 0, 0.5))
-		self.pieCapsule.node().setFromCollideMask(WALL_MASK)
-		self.pieCapsule.node().setIntoCollideMask(BitMask32.allOff())
-		
-		#Set up the pie's collision ray (gravity & floor collisions)
-		self.pieRay = self.pieNode.attachNewNode(CollisionNode('pieRay'))
-		self.pieRay.node().addSolid(CollisionRay(0, 0, 1, 0, 0, -1))
-		self.pieRay.node().setFromCollideMask(FLOOR_MASK)
-		self.pieRay.node().setIntoCollideMask(BitMask32.allOff())
-		
-		#Define intervals for the pie's spawning movement
-		self.scalePie = LerpScaleInterval(self.pie, 1, 1, 0)
-		
-		#Initialize the toon model and its parent node
-		self.toonNode = NodePath('toonNode')
-		self.toonNode.reparentTo(render)
-		self.toonNode.setHpr(-90,0,0)
-		self.toonNode.setPos(2, 2, 5)
-		self.toon = self.initToon()
-		self.toon.reparentTo(self.toonNode)
-		
-		#Set up the toon collision capsule
-		self.toonCapsule = self.toon.attachNewNode(CollisionNode('toonCap'))
-		self.toonCapsule.node().addSolid(CollisionCapsule(0, 0, 2, 0, 0, 2, 1))
-		self.toonCapsule.node().setFromCollideMask(WALL_MASK)
-		self.toonCapsule.node().setIntoCollideMask(BitMask32.allOff())
-		
-		#Set up the toon collision ray
-		self.toonRay = self.toonNode.attachNewNode(CollisionNode('toonRay'))
-		self.toonRay.node().addSolid(CollisionRay(0, 0, 2, 0, 0, -1))
-		self.toonRay.node().setFromCollideMask(FLOOR_MASK)
-		self.toonRay.node().setIntoCollideMask(BitMask32.allOff())
-		
-		#Define the floor and wall coliding bodies
-		self.floorCollider = self.terrain.find("**/collision_floors")
-		self.wallCollider = self.terrain.find("**/collision_walls")
+		#Define floor collider
+		self.floorCollider = self.floor
 		self.floorCollider.node().setIntoCollideMask(FLOOR_MASK)
+		
+		#Define wall collider
+		self.wallCollider = self.walls
 		self.wallCollider.node().setIntoCollideMask(WALL_MASK)
 		
-		#Add important collision events to the handlers
-		self.floorHandler.addInPattern('%fn-into-%in')
-		#self.wallHandler.addInPattern('%fn-into-%in')
+		#Initialize the player model
+		self.player = self.initToon()
+		self.player.reparentTo(render)
 		
-		#Add the toon and pie colliders to the handlers
-		self.floorHandler.addCollider(self.toonRay, self.toonNode)
-		self.floorHandler.addCollider(self.pieRay, self.pieNode)
-		self.wallHandler.addCollider(self.toonCapsule, self.toonNode)
-		self.wallHandler.addCollider(self.pieCapsule, self.pieNode)
+		#Set up player wall collision capsule
+		self.playerSphere = self.player.attachNewNode(CollisionNode('playerSphere'))
+		self.playerSphere.node().addSolid(CollisionSphere(0, 0, 0, 1))
+		self.playerSphere.setPos(0, 0, 3)
+		self.playerSphere.node().setFromCollideMask(WALL_MASK)
+		self.playerSphere.node().setIntoCollideMask(BitMask32.allOff())
+		self.playerSphere.show()
 		
-		#Add the handlers to the traverser (collision driver)
-		self.cTrav.addCollider(self.toonRay, self.floorHandler)
-		self.cTrav.addCollider(self.pieRay, self.floorHandler)
-		self.cTrav.addCollider(self.toonCapsule, self.wallHandler)
-		self.cTrav.addCollider(self.pieCapsule, self.wallHandler)
+		#Set up player floor collision ray
+		self.playerRay = self.player.attachNewNode(CollisionNode('playerRay'))
+
+		#The ray has to be a unit above to detect stairs and inclined planes
+		self.playerRay.node().addSolid(CollisionRay(0, 0, 1, 0, 0, -1))
+		self.playerRay.node().setFromCollideMask(FLOOR_MASK)
+		self.playerRay.node().setIntoCollideMask(BitMask32.allOff())
 		
+		#Define pie node, which will serve as the flying part of the pie
+		self.pieNode = NodePath('pieNode')
+		self.pieNode.reparentTo(render)
+		
+		#Load the pie model and define its scaling motion
+		self.pie = loader.loadModel(self.pandaDirectory + "/resources/toon/models/tart.bam")
+		self.scalePie = LerpScaleInterval(self.pie, 1, 1, 0)
+		
+		#Set up pie wall collision capsule
+		self.pieSphere = self.pieNode.attachNewNode(CollisionNode('pieSphere'))
+		self.pieSphere.node().addSolid(CollisionSphere(0, 0, 0, 0.75))
+		self.pieSphere.node().setFromCollideMask(WALL_MASK)
+		self.pieSphere.node().setIntoCollideMask(BitMask32.allOff())
+		self.pieSphere.show()
+		
+		#Set up pie floor collision segment
+		self.pieSeg = self.pieNode.attachNewNode(CollisionNode('pieSeg'))
+		self.pieSeg.node().addSolid(CollisionSegment(0, 0, 1, 0, 0, -1))
+		self.pieSeg.node().setFromCollideMask(FLOOR_MASK)
+		self.pieSeg.node().setIntoCollideMask(BitMask32.allOff())
+		
+		#Add collisions to handler
+		self.floorHandler.addCollider(self.pieSeg, self.pieNode)
+		self.floorHandler.addCollider(self.playerRay, self.player)
+		self.wallHandler.addCollider(self.pieSphere, self.pieNode)
+		self.wallHandler.addCollider(self.playerSphere, self.player)
+		
+		#Add important collision events to the handlers (tags are used 
+		#since there are multiple GeomNodes under 'collision_floors' and walls)
+		self.floorHandler.addInPattern('%fn-into-%(collisions)it')
+		self.wallHandler.addInPattern('%fn-into-%(collisions)it')
+		
+		#Add handlers to traverser
+		self.cTrav.addCollider(self.playerRay, self.floorHandler)
+		self.cTrav.addCollider(self.pieSeg, self.floorHandler)
+		self.cTrav.addCollider(self.playerSphere, self.wallHandler)
+		self.cTrav.addCollider(self.pieSphere, self.wallHandler)
+		
+		#Render collisions
 		self.cTrav.showCollisions(render)
 		
 		#Reparent the camera
-		self.camera.reparentTo(self.toon)
-		self.camera.setPos(self.toon, 0, -20, 5)
+		self.camera.reparentTo(self.player)
+		self.camera.setPos(self.player, 0, -20, 5)
 		
 		#Initialize animations
-		self.toon.loop('neutral', 'torso')
-		self.toon.loop('neutral', 'legs')
+		self.player.loop('neutral', 'torso')
+		self.player.loop('neutral', 'legs')
 		
 		#Define Y (Forwards/backwards) movement
 		self.accept('arrow_up', self.moveInYStart, ['forward'])
@@ -149,11 +164,12 @@ class PieThrow(ShowBase):
 		#Define pie throwing animation control
 		self.accept('control', self.attackStart)
 		
-		#Accept collision handling events
-		self.accept('self.pieRay-into-self.floorCollider', self.pieFloorCollision)
+		#Accept collision handling events (into-NodeName must be the name of the ACTUAL NODE in the scene graph)
+		self.accept('pieSeg-into-floor', self.pieFloorCollision)
+		self.accept('pieSphere-into-walls', self.pieWallCollision)
 		
 		#Set up throwing interval and sequence
-		self.throwTorso = self.toon.actorInterval('attackTorso', loop=0)
+		self.throwTorso = self.player.actorInterval('attackTorso', loop=0)
 		self.throw = Sequence(Func(self.toggleIsThrowing),
 									Parallel(self.throwTorso, self.scalePie),
 									Func(self.toggleIsThrowing),
@@ -165,32 +181,36 @@ class PieThrow(ShowBase):
 	
 	def pieFloorCollision(self, entry):
 		print('Floor collision!')
+	
+	def pieWallCollision(self, entry):
+		print('Wall collision!')
 		
 	def toggleIsThrowing(self):
 		self.isThrowing = not(self.isThrowing)
 		
 	def updateToon(self, task):
-		#Update the toon's position and heading
+		#Update the player's position and heading
 		if self.isMovingInY:
-			self.toon.setY(self.toon, self.speed)
+			self.player.setY(self.player, self.speed)
 			
 		if self.isTurning:
-			self.toon.setH(self.toon, self.turnSpeed)
+			self.player.setH(self.player, self.turnSpeed)
 		
-		self.toonCurrentH = self.toon.getH()
+		self.playerCurrentH = self.player.getH()
 		return task.cont
 	
 	def attackStart(self):
-		#If the toon is already throwing, ignore new request
+		#If the player is already throwing, ignore new request
 		if self.isThrowing:
 			return
 		
 		#Determine which group of animations to play
 		if not self.isMovingInY and not self.isTurning:
-			self.toon.loop('attackLegs')
+			self.player.loop('attackLegs')
 		
 		#Render the pie, then throw it!
-		self.pie.reparentTo(self.toon.find('**/def_joint_right_hold'))
+		self.pie.setHpr(0,0,0)
+		self.pie.reparentTo(self.player.find('**/def_joint_right_hold'))
 		self.taskMgr.doMethodLater(2.7, self.throwPie, 'throw pie')
 		
 		#Call the pre-defined sequence
@@ -199,29 +219,24 @@ class PieThrow(ShowBase):
 	def attackEnd(self):
 		#Determine which animation to play after throwing
 		if self.isMovingInY and self.speed > 0:
-			self.toon.loop('run', 'torso')
+			self.player.loop('run', 'torso')
 		elif self.isTurning:
-			self.toon.loop('walk', 'torso')
+			self.player.loop('walk', 'torso')
 		else:
-			self.toon.loop('neutral', 'torso')
+			self.player.loop('neutral', 'torso')
 	
 	def throwPie(self, task):
-		#Determine where to put the projectile pie
-		#This isn't the prettiest solution, but its the most consistent
-		#With the animations to make the toon throw the pie straight
-		currentPiePos = self.pie.getPos(render)
-		currentPieH = self.toonCurrentH
-		currentPieP = self.toon.getP(render)
-		currentPieR = 83
+		#Get the current position and hpr of the pie for the pieNode
+		self.pieNode.setPos(self.pie.getPos(render))
+		pieHpr = Point3(self.player.getH(render) + 90, self.pie.getP(render), 80)
 		
-		#reparent the pie model to its parent node
-		self.pieNode.setPos(currentPiePos)
-		self.pieNode.setHpr(currentPieH, currentPieP, currentPieR)
+		#Reparent the pie to the pieNode
 		self.pie.reparentTo(self.pieNode)
+		self.pie.setHpr(pieHpr)
 		
-		#Define path interval and start playing it
+		#Arch that pieNode puppy!
 		self.flyingPie = ProjectileInterval(self.pieNode, startPos=self.pieNode.getPos(), 
-											startVel=render.getRelativeVector(self.pieNode,Vec3(0,0,100)), duration=5)
+											startVel=render.getRelativeVector(self.pie,Vec3(0,0,75)), duration=5)
 		self.flyingPie.start()
 		
 		self.pieIsThrown = True
@@ -229,28 +244,28 @@ class PieThrow(ShowBase):
 		return task.done
 	
 	def turnStart(self, direction):
-		#If the toon is already turning, ignore the new request
+		#If the player is already turning, ignore the new request
 		if self.isTurning:
 			return
 		
 		#Set the object heading to prevent pressing the right and left keys at the same time
 		self.turnHeading = direction
 		
-		#If the toon is moving in the Y direction...
+		#If the player is moving in the Y direction...
 		if self.isMovingInY:
-			#And the toon is moving backwards...
+			#And the player is moving backwards...
 			if self.speed < 0:
 				#Replace the run animation with walk and play it backwards
-				self.toon.setPlayRate(-1, 'walk')
+				self.player.setPlayRate(-1, 'walk')
 				
-		#If the toon is not moving
+		#If the player is not moving
 		else:
 			#Play the forward plain walking animations
-			self.toon.setPlayRate(1, 'walk')
-			self.toon.loop('walk', 'torso')
-			self.toon.loop('walk', 'legs')
+			self.player.setPlayRate(1, 'walk')
+			self.player.loop('walk', 'torso')
+			self.player.loop('walk', 'legs')
 		
-		#Determine which heading the toon will turn
+		#Determine which heading the player will turn
 		if direction == 'right':
 			self.turnSpeed = -0.7
 		elif direction == 'left':
@@ -264,17 +279,17 @@ class PieThrow(ShowBase):
 		if direction != self.turnHeading:
 			return
 			
-		#If the toon is not moving in the Y direction...
+		#If the player is not moving in the Y direction...
 		if not self.isMovingInY:
 			#Make the animation play neutral before stopping to turn
-			self.toon.loop('neutral', 'torso')
-			self.toon.loop('neutral', 'legs')
+			self.player.loop('neutral', 'torso')
+			self.player.loop('neutral', 'legs')
 		
 		#Tell task manager to stop turning
 		self.isTurning = False
 		
 	def moveInYStart(self, direction):
-		#If the toon is already moving, ignore the new request
+		#If the player is already moving, ignore the new request
 		if self.isMovingInY:
 			return
 		
@@ -283,18 +298,18 @@ class PieThrow(ShowBase):
 		
 		#If the up key is pressed...
 		if direction == 'forward':
-			#Set a positive speed and make the toon run
+			#Set a positive speed and make the player run
 			self.speed = 0.6
-			self.toon.loop('run', 'torso')
-			self.toon.loop('run', 'legs')
+			self.player.loop('run', 'torso')
+			self.player.loop('run', 'legs')
 		
 		#Otherwise...
 		elif direction == 'backward':
-			#Set a negative speed and make the toon walk backwards
+			#Set a negative speed and make the player walk backwards
 			self.speed = -0.3
-			self.toon.setPlayRate(-1, 'walk')
-			self.toon.loop('walk', 'torso')
-			self.toon.loop('walk', 'legs')
+			self.player.setPlayRate(-1, 'walk')
+			self.player.loop('walk', 'torso')
+			self.player.loop('walk', 'legs')
 		
 		#Tell the task manager to start moving in local Y
 		self.isMovingInY = True
@@ -304,27 +319,27 @@ class PieThrow(ShowBase):
 		if direction != self.movementHeading:
 			return
 		
-		#If the toon is not turning...
+		#If the player is not turning...
 		if not self.isTurning:
-			#Set the speed to positive and have the toon idle
+			#Set the speed to positive and have the player idle
 			self.speed = 0.6
-			self.toon.loop('neutral', 'torso')
-			self.toon.loop('neutral', 'legs')
+			self.player.loop('neutral', 'torso')
+			self.player.loop('neutral', 'legs')
 			
 		#Otherwise...
 		else:
-			#Make the toon walk instead
-			self.toon.setPlayRate(1, 'walk')
+			#Make the player walk instead
+			self.player.setPlayRate(1, 'walk')
 			self.speed = 0.6
-			self.toon.loop('walk', 'torso')
-			self.toon.loop('walk', 'legs')
+			self.player.loop('walk', 'torso')
+			self.player.loop('walk', 'legs')
 		
 		#Tell the task manager to stop moving in local Y
 		self.isMovingInY = False
 		
 	def initToon(self):
 		#Create the toon!
-		self.toon = Actor({'torso': self.pandaDirectory + '/resources/toon/models/tt_a_chr_dgl_shorts_torso_1000.bam',
+		self.player = Actor({'torso': self.pandaDirectory + '/resources/toon/models/tt_a_chr_dgl_shorts_torso_1000.bam',
 							'legs': self.pandaDirectory + '/resources/toon/models/tt_a_chr_dgm_shorts_legs_1000.bam'},
 							{'torso':{
 							'neutral': self.pandaDirectory + '/resources/toon/animations/tt_a_chr_dgl_shorts_torso_neutral.bam',
@@ -338,24 +353,24 @@ class PieThrow(ShowBase):
 							'attackLegs': self.pandaDirectory + '/resources/toon/animations/tt_a_chr_dgm_shorts_legs_pie-throw.bam',
 							'walk': self.pandaDirectory + '/resources/toon/animations/tt_a_chr_dgm_shorts_legs_walk.bam'
 							}})
-		self.toon.attach('torso', 'legs', 'joint_hips')
-		self.toon.find('**/neck').setColor(1, 1, 0)
-		self.toon.find('**/legs').setColor(1, 1, 0)
-		self.toon.find('**/arms').setColor(1, 1, 0)
-		self.toon.find('**/hands').setColor(1, 1, 1)
+		self.player.attach('torso', 'legs', 'joint_hips')
+		self.player.find('**/neck').setColor(1, 1, 0)
+		self.player.find('**/legs').setColor(1, 1, 0)
+		self.player.find('**/arms').setColor(1, 1, 0)
+		self.player.find('**/hands').setColor(1, 1, 1)
 		
 		#Set textures and remove unnecessary models
-		self.toon.find('**/sleeves').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_shirtSleeve_cashbotCrusher.jpg'),1)
-		self.toon.find('**/torso-top').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_shirt_cashbotCrusher.jpg'),1)
-		self.toon.find('**/torso-bot').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_shorts_cashbotCrusher.jpg'),1)
-		self.toon.find('**/shoes').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_acc_sho_cashbotCrusher.jpg'),1)
-		self.toon.find('**/feet').removeNode()
-		self.toon.find('**/boots_short').removeNode()
-		self.toon.find('**/boots_long').removeNode()
+		self.player.find('**/sleeves').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_shirtSleeve_cashbotCrusher.jpg'),1)
+		self.player.find('**/torso-top').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_shirt_cashbotCrusher.jpg'),1)
+		self.player.find('**/torso-bot').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_shorts_cashbotCrusher.jpg'),1)
+		self.player.find('**/shoes').setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/ttr_t_chr_avt_acc_sho_cashbotCrusher.jpg'),1)
+		self.player.find('**/feet').removeNode()
+		self.player.find('**/boots_short').removeNode()
+		self.player.find('**/boots_long').removeNode()
 		
 		#Create the toon head!
 		self.toonHead = loader.loadModel(self.pandaDirectory + '/resources/toon/models/tt_a_chr_dgm_skirt_head_1000.bam')
-		self.toonHead.reparentTo(self.toon.find('**/def_head'))
+		self.toonHead.reparentTo(self.player.find('**/def_head'))
 		self.toonHead.find('**/head').setColor(1, 1, 0)
 		self.toonHead.find('**/head-front').setColor(1, 1, 0)
 		
@@ -367,7 +382,7 @@ class PieThrow(ShowBase):
 		self.topHat.setTexture(loader.loadTexture(self.pandaDirectory + '/resources/toon/textures/tt_t_chr_avt_acc_hat_topHatQuizmaster.jpg'),1)
 		self.topHat.setScale(0.35)
 		
-		return self.toon
+		return self.player
 		
 pieThrow = PieThrow()
 pieThrow.run()
